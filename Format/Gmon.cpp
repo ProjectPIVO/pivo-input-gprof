@@ -3,6 +3,8 @@
 #include "GprofInputModule.h"
 #include "Log.h"
 
+#include <math.h>
+
 GmonFile::GmonFile()
 {
     for (int i = 0; i < MAX_GMON_REC_TYPE; i++)
@@ -267,8 +269,8 @@ void GmonFile::ClipHistogramAddress(bfd_vma *lowpc, bfd_vma *highpc)
 
         // compute common low and high PC
         bfd_vma common_low, common_high;
-        common_low = max(tmp->lowpc, *lowpc);
-        common_high = min(tmp->highpc, *highpc);
+        common_low = nmax(tmp->lowpc, *lowpc);
+        common_high = nmin(tmp->highpc, *highpc);
 
         if (common_low < common_high)
         {

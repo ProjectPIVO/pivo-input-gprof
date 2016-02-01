@@ -50,3 +50,7 @@ ENDFOREACH()
 
 # core part is also executable - add executable to be built from these files
 ADD_LIBRARY(pivo-input-gprof SHARED ${modulefiles})
+
+IF(CMAKE_COMPILER_IS_GNUCXX)
+    TARGET_LINK_LIBRARIES(pivo-input-gprof m)
+ENDIF()
