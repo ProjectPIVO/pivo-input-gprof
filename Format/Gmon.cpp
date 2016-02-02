@@ -106,7 +106,7 @@ void GmonFile::ResolveSymbols(const char* binaryFilename)
 {
     // binary name is hardcoded for now
     // TODO: more portable way of resolving nm executable path
-    const char *argv[] = {"/usr/bin/nm", binaryFilename, 0};
+    const char *argv[] = {"/usr/bin/nm", "-C", binaryFilename, 0};
 
     int readfd = ForkProcessForReading(argv);
 
