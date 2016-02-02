@@ -1,8 +1,10 @@
 #include "General.h"
+#include "Helpers.h"
 #include "Gmon.h"
 #include "GprofInputModule.h"
 #include "Log.h"
 
+#include <algorithm>
 #include <math.h>
 
 GmonFile::GmonFile()
@@ -11,14 +13,23 @@ GmonFile::GmonFile()
         m_tagCount[i] = 0;
 }
 
-GmonFile* GmonFile::Load(const char* filename)
+GmonFile* GmonFile::Load(const char* filename, const char* binaryFilename)
 {
     LogFunc(LOG_DEBUG, "Loading gmon file %s", filename);
 
     // open file
     FILE* gf = fopen(filename, "rb");
     if (!gf)
+    {
+        LogFunc(LOG_ERROR, "Couldn't find gmon file %s", filename);
         return nullptr;
+    }
+
+    FILE* tmpbf = fopen(binaryFilename, "rb");
+    if (!tmpbf)
+        LogFunc(LOG_ERROR, "Invalid binary file %s supplied, won't be possible to resolve symbols!", binaryFilename);
+    else
+        fclose(tmpbf);
 
     GmonFile* gmon = new GmonFile();
 
@@ -47,6 +58,8 @@ GmonFile* GmonFile::Load(const char* filename)
     gmon->m_fileVersion = *((uint32_t*)gmon->m_header.version);
 
     // TODO: verify supported file version ( <= GMON_VERSION ) - TODO: verify version numbering and compatibility
+
+    gmon->ResolveSymbols(binaryFilename);
 
     uint8_t tag;
 
@@ -87,6 +100,113 @@ GmonFile* GmonFile::Load(const char* filename)
         gmon->m_tagCount[GMON_TAG_TIME_HIST], gmon->m_tagCount[GMON_TAG_CG_ARC], gmon->m_tagCount[GMON_TAG_BB_COUNT]);
 
     return gmon;
+}
+
+void GmonFile::ResolveSymbols(const char* binaryFilename)
+{
+    // binary name is hardcoded for now
+    // TODO: more portable way of resolving nm executable path
+    const char *argv[] = {"/usr/bin/nm", binaryFilename, 0};
+
+    int readfd = ForkProcessForReading(argv);
+
+    if (readfd <= 0)
+    {
+        LogFunc(LOG_ERROR, "Could not execute nm binary for symbol resolving, no symbols loaded");
+        return;
+    }
+
+    // buffer for reading lines from nm stdout
+    char buffer[256];
+
+    // Read from child’s stdout
+    int res, pos, cnt;
+    char c;
+    uint64_t laddr;
+    char* endptr;
+
+    cnt = 0;
+
+    // line reading loop - terminated by file end
+    while (true)
+    {
+        pos = 0;
+        while ((res = read(readfd, &c, sizeof(char))) == 1)
+        {
+            // stop reading line when end of line character is acquired
+            if (c == 10 || c == 13)
+                break;
+
+            // read only 255 characters, strip the rest
+            if (pos < 255)
+                buffer[pos++] = c;
+        }
+
+        // this both means end of file - eighter no character was read, or we reached zero character
+        if (res <= 0 || c == 0)
+            break;
+
+        // properly null-perminate string
+        buffer[pos] = 0;
+
+        // require some minimal length, parsing would fail anyway
+        if (strlen(buffer) < 8)
+            continue;
+
+        // parse address
+        laddr = strtol(buffer, &endptr, 16);
+        if (endptr - buffer + 2 > pos)
+            break;
+
+        // store "the rest of line" as function name to function table
+        m_functionTable.push_back({ laddr, endptr+2, NO_CLASS });
+        cnt++;
+
+        // This logging call usually fills console with loads of messages; commented out for sanity reasons
+        //LogFunc(LOG_VERBOSE, "Address: %llu, function: %s", laddr, m_functionTable[laddr].c_str());
+    }
+
+    close(readfd);
+
+    // sort function entries to allow effective search
+    std::sort(m_functionTable.begin(), m_functionTable.end(), FunctionEntrySortPredicate());
+
+    LogFunc(LOG_VERBOSE, "Loaded %i symbols from supplied binary file", cnt);
+}
+
+FunctionEntry* GmonFile::GetFunctionByAddress(uint64_t address)
+{
+    if (m_functionTable.empty())
+        return nullptr;
+
+    // we assume that m_functionTable is sorted from lower address to higher
+    // so we are able to perform binary search in O(log(n)) complexity
+
+    uint64_t ilow, ihigh, imid;
+
+    ilow = 0;
+    ihigh = m_functionTable.size() - 1;
+
+    imid = (ilow + ihigh) / 2;
+
+    // iterative binary search
+    while (ilow <= ihigh)
+    {
+        if (m_functionTable[imid].address > address)
+            ihigh = imid - 1;
+        else
+            ilow = imid + 1;
+
+        imid = (ilow + ihigh) / 2;
+    }
+
+    // the outcome may be one step higher (depending from which side we arrived), than we would like to have - we are looking for
+    // "highest lower address", i.e. for addresses 2, 5, 10, and input address 7, we return entry with address 5
+
+    if (m_functionTable[ilow].address <= address)
+        return &m_functionTable[ilow];
+
+    return &m_functionTable[ilow - 1];
 }
 
 bool GmonFile::ReadVMA(bfd_vma *target)
@@ -320,6 +440,12 @@ bool GmonFile::ReadCallGraphRecord()
     LogFunc(LOG_VERBOSE, "Read call graph block, frompc %llu, selfpc %llu, count %u", frompc, selfpc, count);
 
     // TODO: implement and resolve call graph!
+
+    //FunctionEntry* fe = GetFunctionByAddress(selfpc);
+    //if (fe)
+    //{
+    // ...
+    //}
 
     m_tagCount[GMON_TAG_CG_ARC]++;
     return true;

@@ -1,6 +1,8 @@
 #ifndef PIVO_GPROF_MODULE_GMON_H
 #define PIVO_GPROF_MODULE_GMON_H
 
+#include "UnitIdentifiers.h"
+
 // gmon.out file magic cookie
 #define	GMON_MAGIC "gmon"
 // gmon.out highest supported file version
@@ -43,11 +45,14 @@ class GmonFile
 {
     public:
         // public factory method loading data from supplied file
-        static GmonFile* Load(const char* filename);
+        static GmonFile* Load(const char* filename, const char* binaryFilename);
 
     private:
         // private constructor - use public factory method to instantiate this class
         GmonFile();
+
+        // resolve symbols from executable file using builtin tools (nm, winnm, ..)
+        void ResolveSymbols(const char* binaryFilename);
 
         // source file
         FILE* m_file;
@@ -75,6 +80,9 @@ class GmonFile
         // clips histogram record to aligned block - lowpc equals highpc on success
         void ClipHistogramAddress(bfd_vma *lowpc, bfd_vma *highpc);
 
+        // finds function entry using supplied address
+        FunctionEntry* GetFunctionByAddress(uint64_t address);
+
         // header read from file
         gmon_header m_header;
         // converted version of gmon file
@@ -93,6 +101,9 @@ class GmonFile
         uint32_t m_profRate;
         // stored histogram scale
         double m_histogramScale;
+
+        // table of addresses of functions
+        std::vector<FunctionEntry> m_functionTable;
 };
 
 #endif

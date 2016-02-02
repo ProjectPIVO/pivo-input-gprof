@@ -39,7 +39,7 @@ void GprofInputModule::ReportFeatures(IMF_SET &set)
 bool GprofInputModule::LoadFile(const char* file, const char* binaryFile)
 {
     // instantiate gmon file wrapper class
-    m_gmon = GmonFile::Load(file);
+    m_gmon = GmonFile::Load(file, binaryFile);
     if (!m_gmon)
         return false;
 
