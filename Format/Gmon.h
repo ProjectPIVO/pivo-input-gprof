@@ -2,6 +2,7 @@
 #define PIVO_GPROF_MODULE_GMON_H
 
 #include "UnitIdentifiers.h"
+#include "FlatProfileStructs.h"
 
 // gmon.out file magic cookie
 #define	GMON_MAGIC "gmon"
@@ -40,6 +41,13 @@ struct histogram
     int *sample;
 };
 
+struct callgraph_arc
+{
+    bfd_vma frompc;
+    bfd_vma selfpc;
+    uint64_t count;
+};
+
 // gmon.out file wrapper class
 class GmonFile
 {
@@ -53,6 +61,9 @@ class GmonFile
 
         // resolve symbols from executable file using builtin tools (nm, winnm, ..)
         void ResolveSymbols(const char* binaryFilename);
+
+        // creates flat profile
+        void ProcessFlatProfile();
 
         // source file
         FILE* m_file;
@@ -81,7 +92,7 @@ class GmonFile
         void ClipHistogramAddress(bfd_vma *lowpc, bfd_vma *highpc);
 
         // finds function entry using supplied address
-        FunctionEntry* GetFunctionByAddress(uint64_t address);
+        FunctionEntry* GetFunctionByAddress(uint64_t address, uint32_t* functionIndex = nullptr);
 
         // header read from file
         gmon_header m_header;
@@ -92,6 +103,8 @@ class GmonFile
 
         // histogram storage
         std::list<histogram*> m_histograms;
+        // callgraph arc records
+        std::list<callgraph_arc*> m_callGraphArcs;
 
         // stored histogram dimension
         std::string m_histDimension;
@@ -104,6 +117,9 @@ class GmonFile
 
         // table of addresses of functions
         std::vector<FunctionEntry> m_functionTable;
+
+        // table of flat profile records
+        std::vector<FlatProfileRecord> m_flatProfile;
 };
 
 #endif

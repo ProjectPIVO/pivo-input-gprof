@@ -99,6 +99,8 @@ GmonFile* GmonFile::Load(const char* filename, const char* binaryFilename)
     LogFunc(LOG_VERBOSE, "gmon file loaded, %llu histogram records, %llu call-graph records, %llu basic block records",
         gmon->m_tagCount[GMON_TAG_TIME_HIST], gmon->m_tagCount[GMON_TAG_CG_ARC], gmon->m_tagCount[GMON_TAG_BB_COUNT]);
 
+    gmon->ProcessFlatProfile();
+
     return gmon;
 }
 
@@ -174,8 +176,11 @@ void GmonFile::ResolveSymbols(const char* binaryFilename)
     LogFunc(LOG_VERBOSE, "Loaded %i symbols from supplied binary file", cnt);
 }
 
-FunctionEntry* GmonFile::GetFunctionByAddress(uint64_t address)
+FunctionEntry* GmonFile::GetFunctionByAddress(uint64_t address, uint32_t* functionIndex)
 {
+    if (functionIndex)
+        *functionIndex = 0;
+
     if (m_functionTable.empty())
         return nullptr;
 
@@ -204,9 +209,81 @@ FunctionEntry* GmonFile::GetFunctionByAddress(uint64_t address)
     // "highest lower address", i.e. for addresses 2, 5, 10, and input address 7, we return entry with address 5
 
     if (m_functionTable[ilow].address <= address)
+    {
+        if (functionIndex)
+            *functionIndex = ilow;
         return &m_functionTable[ilow];
+    }
+
+    if (functionIndex)
+        *functionIndex = ilow - 1;
 
     return &m_functionTable[ilow - 1];
+}
+
+void GmonFile::ProcessFlatProfile()
+{
+    m_flatProfile.resize(m_functionTable.size());
+
+    FlatProfileRecord *fp;
+
+    // prepare flat profile table, it will match function table at first stage of filling
+    for (int i = 0; i < m_functionTable.size(); i++)
+    {
+        fp = &m_flatProfile[i];
+
+        fp->functionId = i;
+        fp->callCount = 0;
+        fp->timeTotal = 0;
+        fp->timeTotalPct = 0.0f;
+    }
+
+    histogram* record;
+    uint32_t pcoff;
+    uint32_t fi;
+
+    // go through all histogram records and sum the time sampled
+    // match function, in which it belongs, and then add sampled time there
+    for (std::list<histogram*>::iterator itr = m_histograms.begin(); itr != m_histograms.end(); ++itr)
+    {
+        record = *itr;
+        // histogram samples are divided into "buckets" of address range
+        // pcoff is then multiplier of bucket index, so it results into PC offset
+        pcoff = 1 + ((record->highpc - record->lowpc) / record->num_bins);
+
+        // go through all buckets (bins)
+        for (int i = 0; i < record->num_bins; i++)
+        {
+            // if there was some time spent..
+            if (record->sample[i] > 0)
+            {
+                // retrieve function entry and index, and add this time to total time spent here
+                FunctionEntry *fe = GetFunctionByAddress(record->lowpc + i*pcoff, &fi);
+                if (fe)
+                    m_flatProfile[fi].timeTotal += record->sample[i];
+            }
+        }
+    }
+
+    callgraph_arc* cg;
+
+    // go through all callgraph data and collect call counts using so called "arcs"
+    for (std::list<callgraph_arc*>::iterator itr = m_callGraphArcs.begin(); itr != m_callGraphArcs.end(); ++itr)
+    {
+        cg = *itr;
+
+        // also find function, add call count gathered by gprof
+        FunctionEntry *fe = GetFunctionByAddress(cg->selfpc, &fi);
+        if (fe)
+            m_flatProfile[fi].callCount += cg->count;
+    }
+
+    // at first, sort by call count - that's our secondary criteria
+    std::sort(m_flatProfile.begin(), m_flatProfile.end(), FlatProfileCallCountSortPredicate());
+
+    // then, sort by time spent, and use stable sort to not scramble already sorted entires
+    // within same "bucket" of time quantum
+    std::stable_sort(m_flatProfile.begin(), m_flatProfile.end(), FlatProfileTimeSortPredicate());
 }
 
 bool GmonFile::ReadVMA(bfd_vma *target)
@@ -425,27 +502,21 @@ histogram* GmonFile::FindHistogram(bfd_vma lowpc, bfd_vma highpc)
 
 bool GmonFile::ReadCallGraphRecord()
 {
-    bfd_vma frompc, selfpc;
-    uint32_t count;
+    callgraph_arc *cg = new callgraph_arc();
 
     // read call graph record - source PC, self PC and count
-    if (!ReadVMA(&frompc)
-        || !ReadVMA(&selfpc)
-        || !Read32((int32_t*)&count))
+    if (!ReadVMA(&cg->frompc)
+        || !ReadVMA(&cg->selfpc)
+        || !Read32((int32_t*)&cg->count))
     {
+        delete cg;
         LogFunc(LOG_ERROR, "Unexpected end of file while reading callgraph record");
         return false;
     }
 
-    LogFunc(LOG_VERBOSE, "Read call graph block, frompc %llu, selfpc %llu, count %u", frompc, selfpc, count);
+    LogFunc(LOG_VERBOSE, "Read call graph block, frompc %llu, selfpc %llu, count %lu", cg->frompc, cg->selfpc, cg->count);
 
-    // TODO: implement and resolve call graph!
-
-    //FunctionEntry* fe = GetFunctionByAddress(selfpc);
-    //if (fe)
-    //{
-    // ...
-    //}
+    m_callGraphArcs.push_back(cg);
 
     m_tagCount[GMON_TAG_CG_ARC]++;
     return true;
