@@ -55,6 +55,11 @@ class GmonFile
         // public factory method loading data from supplied file
         static GmonFile* Load(const char* filename, const char* binaryFilename);
 
+        // fills function table with loaded symbols
+        void FillFunctionTable(std::vector<FunctionEntry> &dst);
+        // fills flat profile with analyzed data
+        void FillFlatProfileTable(std::vector<FlatProfileRecord> &dst);
+
     private:
         // private constructor - use public factory method to instantiate this class
         GmonFile();

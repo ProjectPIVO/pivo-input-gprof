@@ -33,7 +33,8 @@ void GprofInputModule::ReportFeatures(IMF_SET &set)
     // nullify set
     IMF_CREATE(set);
 
-    // for now, no support
+    // flat profile is supported
+    IMF_ADD(set, IMF_FLAT_PROFILE);
 }
 
 bool GprofInputModule::LoadFile(const char* file, const char* binaryFile)
@@ -57,5 +58,12 @@ void GprofInputModule::GetFunctionTable(std::vector<FunctionEntry> &dst)
 {
     dst.clear();
 
-    // TODO: implement this
+    m_gmon->FillFunctionTable(dst);
+}
+
+void GprofInputModule::GetFlatProfileData(std::vector<FlatProfileRecord> &dst)
+{
+    dst.clear();
+
+    m_gmon->FillFlatProfileTable(dst);
 }

@@ -572,3 +572,13 @@ bool GmonFile::ReadBasicBlockRecord()
     m_tagCount[GMON_TAG_BB_COUNT]++;
     return true;
 }
+
+void GmonFile::FillFunctionTable(std::vector<FunctionEntry> &dst)
+{
+    dst.assign(m_functionTable.begin(), m_functionTable.end());
+}
+
+void GmonFile::FillFlatProfileTable(std::vector<FlatProfileRecord> &dst)
+{
+    dst.assign(m_flatProfile.begin(), m_flatProfile.end());
+}
