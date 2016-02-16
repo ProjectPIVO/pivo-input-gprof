@@ -27,7 +27,7 @@ enum GMON_Record_Tag
 };
 
 // TODO: proper vma definition (depends on platform)
-typedef uint64_t bfd_vma;
+typedef uintptr_t bfd_vma;
 
 // Profiling unit definition
 typedef unsigned char UNIT[2];
