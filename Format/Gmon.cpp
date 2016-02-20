@@ -111,7 +111,7 @@ void GmonFile::ResolveSymbols(const char* binaryFilename)
 {
     // binary name is hardcoded for now
     // TODO: more portable way of resolving nm executable path
-    const char *argv[] = {"/usr/bin/nm", "-C", binaryFilename, 0};
+    const char *argv[] = {"/usr/bin/nm", "-a", "-C", binaryFilename, 0};
 
     int readfd = ForkProcessForReading(argv);
 
@@ -129,6 +129,7 @@ void GmonFile::ResolveSymbols(const char* binaryFilename)
     char c;
     uint64_t laddr;
     char* endptr;
+    char fncType;
 
     cnt = 0;
 
@@ -163,8 +164,15 @@ void GmonFile::ResolveSymbols(const char* binaryFilename)
         if (endptr - buffer + 2 > pos)
             break;
 
+        // resolve function type
+        fncType = *(endptr+1);
+        if (fncType == 'T' || fncType == 't')
+            fncType = FET_TEXT;
+        else
+            fncType = FET_MISC;
+
         // store "the rest of line" as function name to function table
-        m_functionTable.push_back({ laddr, 0, endptr+2, NO_CLASS });
+        m_functionTable.push_back({ laddr, 0, endptr+3, NO_CLASS, (FunctionEntryType)fncType });
         cnt++;
 
         // This logging call usually fills console with loads of messages; commented out for sanity reasons
