@@ -96,8 +96,15 @@ class GmonFile
         // clips histogram record to aligned block - lowpc equals highpc on success
         void ClipHistogramAddress(bfd_vma *lowpc, bfd_vma *highpc);
 
+        // scales entry points of functions and aligns them to fit profiling
+        void ScaleAndAlignEntries();
+        // assigns histogram entry values to function entries
+        void AssignHistogramEntries(histogram* hist);
+
         // finds function entry using supplied address
-        FunctionEntry* GetFunctionByAddress(uint64_t address, uint32_t* functionIndex = nullptr);
+        FunctionEntry* GetFunctionByAddress(uint64_t address, uint32_t* functionIndex = nullptr, bool useScaled = false);
+        // finds function entry list using supplied address range
+        void GetFunctionListByAddressRange(uint64_t lowpc, uint64_t highpc, std::list<uint32_t>* indexList, bool useScaled = false);
 
         // header read from file
         gmon_header m_header;

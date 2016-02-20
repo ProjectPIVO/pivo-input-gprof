@@ -99,6 +99,9 @@ GmonFile* GmonFile::Load(const char* filename, const char* binaryFilename)
     LogFunc(LOG_VERBOSE, "gmon file loaded, %llu histogram records, %llu call-graph records, %llu basic block records",
         gmon->m_tagCount[GMON_TAG_TIME_HIST], gmon->m_tagCount[GMON_TAG_CG_ARC], gmon->m_tagCount[GMON_TAG_BB_COUNT]);
 
+    // perform scaling of function entries
+    gmon->ScaleAndAlignEntries();
+
     gmon->ProcessFlatProfile();
 
     return gmon;
@@ -161,7 +164,7 @@ void GmonFile::ResolveSymbols(const char* binaryFilename)
             break;
 
         // store "the rest of line" as function name to function table
-        m_functionTable.push_back({ laddr, endptr+2, NO_CLASS });
+        m_functionTable.push_back({ laddr, 0, endptr+2, NO_CLASS });
         cnt++;
 
         // This logging call usually fills console with loads of messages; commented out for sanity reasons
@@ -176,7 +179,7 @@ void GmonFile::ResolveSymbols(const char* binaryFilename)
     LogFunc(LOG_VERBOSE, "Loaded %i symbols from supplied binary file", cnt);
 }
 
-FunctionEntry* GmonFile::GetFunctionByAddress(uint64_t address, uint32_t* functionIndex)
+FunctionEntry* GmonFile::GetFunctionByAddress(uint64_t address, uint32_t* functionIndex, bool useScaled)
 {
     if (functionIndex)
         *functionIndex = 0;
@@ -197,7 +200,7 @@ FunctionEntry* GmonFile::GetFunctionByAddress(uint64_t address, uint32_t* functi
     // iterative binary search
     while (ilow <= ihigh)
     {
-        if (m_functionTable[imid].address > address)
+        if ((useScaled ? m_functionTable[imid].scaled_address : m_functionTable[imid].address) > address)
             ihigh = imid - 1;
         else
             ilow = imid + 1;
@@ -208,7 +211,7 @@ FunctionEntry* GmonFile::GetFunctionByAddress(uint64_t address, uint32_t* functi
     // the outcome may be one step higher (depending from which side we arrived), than we would like to have - we are looking for
     // "highest lower address", i.e. for addresses 2, 5, 10, and input address 7, we return entry with address 5
 
-    if (m_functionTable[ilow].address <= address)
+    if ((useScaled ? m_functionTable[ilow].scaled_address : m_functionTable[ilow].address) <= address)
     {
         if (functionIndex)
             *functionIndex = ilow;
@@ -219,6 +222,98 @@ FunctionEntry* GmonFile::GetFunctionByAddress(uint64_t address, uint32_t* functi
         *functionIndex = ilow - 1;
 
     return &m_functionTable[ilow - 1];
+}
+
+void GmonFile::GetFunctionListByAddressRange(uint64_t lowpc, uint64_t highpc, std::list<uint32_t>* indexList, bool useScaled)
+{
+    if (lowpc > highpc)
+        return;
+
+    if (!indexList)
+        return;
+
+    indexList->clear();
+
+    uint32_t ind;
+    FunctionEntry* fe;
+
+    fe = GetFunctionByAddress(lowpc, &ind, useScaled);
+
+    while (fe && ((!useScaled && fe->address < highpc) || (useScaled && fe->scaled_address < highpc)))
+    {
+        indexList->push_back(ind);
+
+        ++ind;
+
+        if (ind == m_functionTable.size())
+            fe = nullptr;
+        else
+            fe = &m_functionTable[ind];
+    }
+}
+
+void GmonFile::ScaleAndAlignEntries()
+{
+    // This method is now used just for aligning function entries to "measurable scale",
+    // no more functionality for now
+
+    int i;
+
+    for (i = 0; i < m_functionTable.size(); i++)
+    {
+        // scale address by profiling unit
+        m_functionTable[i].scaled_address = m_functionTable[i].address / sizeof(UNIT);
+    }
+}
+
+void GmonFile::AssignHistogramEntries(histogram* hist)
+{
+    uint32_t index;
+    bfd_vma bin_low, bin_high, sym_low, sym_high, overlap, hist_base_pc;
+
+    double time, total_time, credit;
+
+    std::list<uint32_t> indexList;
+
+    hist_base_pc = (hist->lowpc / sizeof(UNIT));
+
+    // go through all bins present in this histogram record
+    for (int i = 0; i < hist->num_bins; i++)
+    {
+        if (hist->sample[i] <= 0)
+            continue;
+
+        // calculate low and high address
+        bin_low = hist_base_pc + (bfd_vma)(m_histogramScale * i);
+        bin_high = hist_base_pc + (bfd_vma)(m_histogramScale * (i + 1));
+
+        time = hist->sample[i];
+        total_time += time;
+
+        // retrieve all functions, that are present in this bin
+        GetFunctionListByAddressRange(bin_low, bin_high, &indexList, true);
+        for (std::list<uint32_t>::iterator itr = indexList.begin(); itr != indexList.end(); ++itr)
+        {
+            index = *itr;
+
+            // calculate low and high address of this function
+            sym_low = m_functionTable[index].scaled_address;
+            sym_high = m_functionTable[index + 1].scaled_address;
+
+            // calculate, how much of the bin is covered by this function
+            // functions may overlap in bins
+            overlap = nmin(bin_high, sym_high) - nmax(bin_low, sym_low);
+            if (overlap > 0)
+            {
+                // this is the real "time credit" for this function call
+                credit = overlap * time / m_histogramScale;
+
+                // TODO: implement symbol table exclusion (i.e. builtins)
+
+                m_flatProfile[index].timeTotal += credit;
+            }
+        }
+    }
 }
 
 void GmonFile::ProcessFlatProfile()
@@ -238,33 +333,10 @@ void GmonFile::ProcessFlatProfile()
         fp->timeTotalPct = 0.0f;
     }
 
-    histogram* record;
-    uint32_t pcoff;
-    uint32_t fi;
-
-    // go through all histogram records and sum the time sampled
-    // match function, in which it belongs, and then add sampled time there
     for (std::list<histogram*>::iterator itr = m_histograms.begin(); itr != m_histograms.end(); ++itr)
-    {
-        record = *itr;
-        // histogram samples are divided into "buckets" of address range
-        // pcoff is then multiplier of bucket index, so it results into PC offset
-        pcoff = 1 + ((record->highpc - record->lowpc) / record->num_bins);
+        AssignHistogramEntries(*itr);
 
-        // go through all buckets (bins)
-        for (int i = 0; i < record->num_bins; i++)
-        {
-            // if there was some time spent..
-            if (record->sample[i] > 0)
-            {
-                // retrieve function entry and index, and add this time to total time spent here
-                FunctionEntry *fe = GetFunctionByAddress(record->lowpc + i*pcoff, &fi);
-                if (fe)
-                    m_flatProfile[fi].timeTotal += record->sample[i];
-            }
-        }
-    }
-
+    uint32_t fi;
     callgraph_arc* cg;
 
     // go through all callgraph data and collect call counts using so called "arcs"
@@ -277,13 +349,6 @@ void GmonFile::ProcessFlatProfile()
         if (fe)
             m_flatProfile[fi].callCount += cg->count;
     }
-
-    // at first, sort by call count - that's our secondary criteria
-    std::sort(m_flatProfile.begin(), m_flatProfile.end(), FlatProfileCallCountSortPredicate());
-
-    // then, sort by time spent, and use stable sort to not scramble already sorted entires
-    // within same "bucket" of time quantum
-    std::stable_sort(m_flatProfile.begin(), m_flatProfile.end(), FlatProfileTimeSortPredicate());
 }
 
 bool GmonFile::ReadVMA(bfd_vma *target)
