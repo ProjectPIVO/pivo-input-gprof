@@ -344,6 +344,12 @@ void GmonFile::ProcessFlatProfile()
     for (std::list<histogram*>::iterator itr = m_histograms.begin(); itr != m_histograms.end(); ++itr)
         AssignHistogramEntries(*itr);
 
+    // scale profiling entries using profiling rate
+    // profiling rate tells us how many measures are in one reported unit
+    double profRate = (double)m_profRate;
+    for (int i = 0; i < m_flatProfile.size(); i++)
+        m_flatProfile[i].timeTotal /= profRate;
+
     uint32_t fi;
     callgraph_arc* cg;
 
