@@ -3,6 +3,7 @@
 
 #include "UnitIdentifiers.h"
 #include "FlatProfileStructs.h"
+#include "CallGraphStructs.h"
 
 // gmon.out file magic cookie
 #define	GMON_MAGIC "gmon"
@@ -59,6 +60,8 @@ class GmonFile
         void FillFunctionTable(std::vector<FunctionEntry> &dst);
         // fills flat profile with analyzed data
         void FillFlatProfileTable(std::vector<FlatProfileRecord> &dst);
+        // fills call graph map with gathered data
+        void FillCallGraphMap(CallGraphMap &dst);
 
     private:
         // private constructor - use public factory method to instantiate this class
@@ -69,6 +72,8 @@ class GmonFile
 
         // creates flat profile
         void ProcessFlatProfile();
+        // creates call graph map
+        void ProcessCallGraph();
 
         // source file
         FILE* m_file;
@@ -132,6 +137,8 @@ class GmonFile
 
         // table of flat profile records
         std::vector<FlatProfileRecord> m_flatProfile;
+        // call graph map
+        CallGraphMap m_callGraph;
 };
 
 #endif

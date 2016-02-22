@@ -104,6 +104,8 @@ GmonFile* GmonFile::Load(const char* filename, const char* binaryFilename)
 
     gmon->ProcessFlatProfile();
 
+    gmon->ProcessCallGraph();
+
     return gmon;
 }
 
@@ -579,6 +581,45 @@ histogram* GmonFile::FindHistogram(bfd_vma lowpc, bfd_vma highpc)
     return nullptr;
 }
 
+void GmonFile::ProcessCallGraph()
+{
+    uint32_t srcIndex, dstIndex;
+    callgraph_arc* arc;
+
+    m_callGraph.clear();
+
+    // go through all callgraph arc collected from gmon file and assign function entry (index) to them
+
+    for (std::list<callgraph_arc*>::iterator itr = m_callGraphArcs.begin(); itr != m_callGraphArcs.end(); itr++)
+    {
+        arc = *itr;
+
+        if (!GetFunctionByAddress(arc->frompc, &srcIndex, false))
+        {
+            LogFunc(LOG_WARNING, "No function containing caller address %llu found, ignoring", arc->frompc);
+            continue;
+        }
+
+        if (!GetFunctionByAddress(arc->selfpc, &dstIndex, false))
+        {
+            LogFunc(LOG_WARNING, "No function containing callee address %llu found, ignoring", arc->selfpc);
+            continue;
+        }
+
+        // call graph arcs may contain multiple caller-callee entries for same function pair,
+        // i.e. when the callee is called from multiple locations within caller function
+        // therefore we add values instead of assigning
+
+        if (m_callGraph.find(srcIndex) == m_callGraph.end() ||
+            m_callGraph[srcIndex].find(dstIndex) == m_callGraph[srcIndex].end())
+        {
+            m_callGraph[srcIndex][dstIndex] = 0;
+        }
+
+        m_callGraph[srcIndex][dstIndex] += arc->count;
+    }
+}
+
 bool GmonFile::ReadCallGraphRecord()
 {
     callgraph_arc *cg = new callgraph_arc();
@@ -595,6 +636,7 @@ bool GmonFile::ReadCallGraphRecord()
 
     LogFunc(LOG_VERBOSE, "Read call graph block, frompc %llu, selfpc %llu, count %lu", cg->frompc, cg->selfpc, cg->count);
 
+    // just store recorded data for later reuse
     m_callGraphArcs.push_back(cg);
 
     m_tagCount[GMON_TAG_CG_ARC]++;
@@ -660,4 +702,12 @@ void GmonFile::FillFunctionTable(std::vector<FunctionEntry> &dst)
 void GmonFile::FillFlatProfileTable(std::vector<FlatProfileRecord> &dst)
 {
     dst.assign(m_flatProfile.begin(), m_flatProfile.end());
+}
+
+void GmonFile::FillCallGraphMap(CallGraphMap &dst)
+{
+    // perform deep copy
+    for (CallGraphMap::iterator itr = m_callGraph.begin(); itr != m_callGraph.end(); ++itr)
+        for (std::map<uint32_t, uint64_t>::iterator sitr = itr->second.begin(); sitr != itr->second.end(); ++sitr)
+            dst[itr->first][sitr->first] = sitr->second;
 }

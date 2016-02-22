@@ -67,3 +67,10 @@ void GprofInputModule::GetFlatProfileData(std::vector<FlatProfileRecord> &dst)
 
     m_gmon->FillFlatProfileTable(dst);
 }
+
+void GprofInputModule::GetCallGraphMap(CallGraphMap &dst)
+{
+    dst.clear();
+
+    m_gmon->FillCallGraphMap(dst);
+}
