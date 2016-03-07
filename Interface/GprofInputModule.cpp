@@ -35,6 +35,9 @@ void GprofInputModule::ReportFeatures(IMF_SET &set)
 
     // flat profile is supported
     IMF_ADD(set, IMF_FLAT_PROFILE);
+
+    // call graph is supported
+    IMF_ADD(set, IMF_CALL_GRAPH);
 }
 
 bool GprofInputModule::LoadFile(const char* file, const char* binaryFile)
