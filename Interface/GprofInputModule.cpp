@@ -28,6 +28,16 @@ GprofInputModule::~GprofInputModule()
     //
 }
 
+const char* GprofInputModule::ReportName()
+{
+    return "gprof input module";
+}
+
+const char* GprofInputModule::ReportVersion()
+{
+    return "0.1-dev";
+}
+
 void GprofInputModule::ReportFeatures(IMF_SET &set)
 {
     // nullify set
