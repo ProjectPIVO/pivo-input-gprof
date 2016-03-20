@@ -3,6 +3,7 @@
 #include "Gmon.h"
 #include "GprofInputModule.h"
 #include "Log.h"
+#include "../config_gprof.h"
 
 #include <algorithm>
 #include <math.h>
@@ -111,9 +112,8 @@ GmonFile* GmonFile::Load(const char* filename, const char* binaryFilename)
 
 void GmonFile::ResolveSymbols(const char* binaryFilename)
 {
-    // binary name is hardcoded for now
-    // TODO: more portable way of resolving nm executable path
-    const char *argv[] = {"/usr/bin/nm", "-a", "-C", binaryFilename, 0};
+    // build nm binary call parameters
+    const char *argv[] = {NM_BINARY_PATH, "-a", "-C", binaryFilename, 0};
 
     int readfd = ForkProcessForReading(argv);
 

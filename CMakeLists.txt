@@ -54,3 +54,7 @@ ADD_LIBRARY(pivo-input-gprof SHARED ${modulefiles})
 IF(CMAKE_COMPILER_IS_GNUCXX)
     TARGET_LINK_LIBRARIES(pivo-input-gprof m)
 ENDIF()
+
+FIND_PROGRAM(NM_BINARY_PATH NAMES nm)
+CONFIGURE_FILE(config_gprof.h.in config_gprof.h)
+

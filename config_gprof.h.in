@@ -1,0 +1,7 @@
+#ifndef PIVO_OUTPUT_HTML_CONFIG_H
+#define PIVO_OUTPUT_HTML_CONFIG_H
+
+#define NM_BINARY_PATH "@NM_BINARY_PATH@"
+
+#endif
+
