@@ -162,7 +162,7 @@ void GmonFile::ResolveSymbols(const char* binaryFilename)
             continue;
 
         // parse address
-        laddr = strtol(buffer, &endptr, 16);
+        laddr = strtoull(buffer, &endptr, 16);
         if (endptr - buffer + 2 > pos)
             break;
 
