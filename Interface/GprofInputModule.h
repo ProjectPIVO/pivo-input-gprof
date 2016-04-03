@@ -21,6 +21,7 @@ class GprofInputModule : public InputModule
         virtual void GetFunctionTable(std::vector<FunctionEntry> &dst);
         virtual void GetFlatProfileData(std::vector<FlatProfileRecord> &dst);
         virtual void GetCallGraphMap(CallGraphMap &dst);
+        virtual void GetCallTreeMap(CallTreeMap &dst);
 
     protected:
         //

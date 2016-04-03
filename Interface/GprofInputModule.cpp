@@ -48,6 +48,9 @@ void GprofInputModule::ReportFeatures(IMF_SET &set)
 
     // call graph is supported
     IMF_ADD(set, IMF_CALL_GRAPH);
+
+    // using seconds as profiling unit
+    IMF_ADD(set, IMF_USE_SECONDS);
 }
 
 bool GprofInputModule::LoadFile(const char* file, const char* binaryFile)
@@ -86,4 +89,11 @@ void GprofInputModule::GetCallGraphMap(CallGraphMap &dst)
     dst.clear();
 
     m_gmon->FillCallGraphMap(dst);
+}
+
+void GprofInputModule::GetCallTreeMap(CallTreeMap &dst)
+{
+    dst.clear();
+
+    // Not supported by gmon format
 }
