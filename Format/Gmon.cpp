@@ -16,7 +16,7 @@ GmonFile::GmonFile()
 
 GmonFile* GmonFile::Load(const char* filename, const char* binaryFilename)
 {
-    LogFunc(LOG_DEBUG, "Loading gmon file %s", filename);
+    LogFunc(LOG_VERBOSE, "Loading gmon file %s", filename);
 
     // open file
     FILE* gf = fopen(filename, "rb");
@@ -35,6 +35,8 @@ GmonFile* GmonFile::Load(const char* filename, const char* binaryFilename)
     GmonFile* gmon = new GmonFile();
 
     gmon->m_file = gf;
+
+    LogFunc(LOG_VERBOSE, "Reading gmon file header");
 
     // read raw header
     if (fread(&gmon->m_header, sizeof(gmon_header), 1, gmon->m_file) != 1)
@@ -71,17 +73,17 @@ GmonFile* GmonFile::Load(const char* filename, const char* binaryFilename)
         {
             // histogram record
             case GMON_TAG_TIME_HIST:
-                LogFunc(LOG_VERBOSE, "Reading histogram record");
+                LogFunc(LOG_DEBUG, "Reading histogram record");
                 gmon->ReadHistogramRecord();
                 break;
             // call-graph record
             case GMON_TAG_CG_ARC:
-                LogFunc(LOG_VERBOSE, "Reading call-graph record");
+                LogFunc(LOG_DEBUG, "Reading call-graph record");
                 gmon->ReadCallGraphRecord();
                 break;
             // basic block record
             case GMON_TAG_BB_COUNT:
-                LogFunc(LOG_VERBOSE, "Reading basic block record");
+                LogFunc(LOG_DEBUG, "Reading basic block record");
                 gmon->ReadBasicBlockRecord();
                 break;
             // anything else is considered an error
@@ -114,6 +116,8 @@ void GmonFile::ResolveSymbols(const char* binaryFilename)
 {
     // build nm binary call parameters
     const char *argv[] = {NM_BINARY_PATH, "-a", "-C", binaryFilename, 0};
+
+    LogFunc(LOG_VERBOSE, "Reasolving symbols using application binary");
 
     int readfd = ForkProcessForReading(argv);
 
@@ -267,6 +271,8 @@ void GmonFile::ScaleAndAlignEntries()
     // This method is now used just for aligning function entries to "measurable scale",
     // no more functionality for now
 
+    LogFunc(LOG_VERBOSE, "Scaling and aligning function entries");
+
     int i;
 
     for (i = 0; i < m_functionTable.size(); i++)
@@ -278,6 +284,8 @@ void GmonFile::ScaleAndAlignEntries()
 
 void GmonFile::AssignHistogramEntries(histogram* hist)
 {
+    LogFunc(LOG_DEBUG, "Assigning histogram entries for 0x%.16llX - 0x%.16llX", hist->lowpc, hist->highpc);
+
     uint32_t index;
     bfd_vma bin_low, bin_high, sym_low, sym_high, overlap, hist_base_pc;
 
@@ -328,6 +336,8 @@ void GmonFile::AssignHistogramEntries(histogram* hist)
 
 void GmonFile::ProcessFlatProfile()
 {
+    LogFunc(LOG_VERBOSE, "Processing flat profile");
+
     m_flatProfile.resize(m_functionTable.size());
 
     FlatProfileRecord *fp;
@@ -583,6 +593,8 @@ histogram* GmonFile::FindHistogram(bfd_vma lowpc, bfd_vma highpc)
 
 void GmonFile::ProcessCallGraph()
 {
+    LogFunc(LOG_VERBOSE, "Processing call graph");
+
     uint32_t srcIndex, dstIndex;
     callgraph_arc* arc;
 
@@ -634,7 +646,7 @@ bool GmonFile::ReadCallGraphRecord()
         return false;
     }
 
-    LogFunc(LOG_VERBOSE, "Read call graph block, frompc %llu, selfpc %llu, count %lu", cg->frompc, cg->selfpc, cg->count);
+    LogFunc(LOG_DEBUG, "Read call graph block, frompc %llu, selfpc %llu, count %lu", cg->frompc, cg->selfpc, cg->count);
 
     // just store recorded data for later reuse
     m_callGraphArcs.push_back(cg);
@@ -696,16 +708,22 @@ bool GmonFile::ReadBasicBlockRecord()
 
 void GmonFile::FillFunctionTable(std::vector<FunctionEntry> &dst)
 {
+    LogFunc(LOG_VERBOSE, "Passing function table from input module to core");
+
     dst.assign(m_functionTable.begin(), m_functionTable.end());
 }
 
 void GmonFile::FillFlatProfileTable(std::vector<FlatProfileRecord> &dst)
 {
+    LogFunc(LOG_VERBOSE, "Passing flat profile table from input module to core");
+
     dst.assign(m_flatProfile.begin(), m_flatProfile.end());
 }
 
 void GmonFile::FillCallGraphMap(CallGraphMap &dst)
 {
+    LogFunc(LOG_VERBOSE, "Passing call graph from input module to core");
+
     // perform deep copy
     for (CallGraphMap::iterator itr = m_callGraph.begin(); itr != m_callGraph.end(); ++itr)
         for (std::map<uint32_t, uint64_t>::iterator sitr = itr->second.begin(); sitr != itr->second.end(); ++sitr)
